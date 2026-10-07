@@ -1,0 +1,65 @@
+name: Build TWRP for Huawei Mate 10 (ALP)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 600
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git python3 python3-pip openjdk-8-jdk build-essential zip curl wget gnupg gperf liblz4-tool libncurses-dev bison flex libssl-dev libxml2-utils bc rsync jq ccache python-is-python3
+
+      - name: Install repo
+        run: |
+          mkdir -p ~/bin
+          curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
+          chmod a+x ~/bin/repo
+          echo "~/bin" >> $GITHUB_PATH
+
+      - name: Configure git
+        run: |
+          git config --global user.email "builder@github-actions.local"
+          git config --global user.name "GitHub Actions Builder"
+          git config --global color.ui false
+
+      - name: Initialize TWRP source
+        run: |
+          mkdir twrp-12.1
+          cd twrp-12.1
+          repo init --depth=1 -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b twrp-12.1
+
+      - name: Sync source
+        run: |
+          cd twrp-12.1
+          repo sync -c -j$(nproc) --no-tags --no-clone-bundle --force-sync
+
+      - name: Clone device tree
+        run: |
+          cd twrp-12.1
+          mkdir -p device/huawei/alp
+          git clone https://github.com/Bakoubak/twrp_device_huawei_alp.git device/huawei/alp
+
+      - name: Build TWRP
+        run: |
+          cd twrp-12.1
+          source build/envsetup.sh
+          lunch twrp_alp-eng
+          mka recoveryimage -j$(nproc)
+
+      - name: Upload recovery image
+        uses: actions/upload-artifact@v4
+        with:
+          name: twrp-alp-recovery
+          path: twrp-12.1/out/target/product/alp/recovery.img
+          retention-days: 30
